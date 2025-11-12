@@ -19,6 +19,7 @@ from .metrics import (
 from .metrics_core import Metric
 from .platform_collector import PLATFORM_COLLECTOR, PlatformCollector
 from .process_collector import PROCESS_COLLECTOR, ProcessCollector
+from .system_collector import SYSTEM_COLLECTOR, SystemCollector
 from .registry import CollectorRegistry, REGISTRY
 
 __all__ = (
@@ -49,6 +50,8 @@ __all__ = (
     'instance_ip_grouping_key',
     'ProcessCollector',
     'PROCESS_COLLECTOR',
+    'SystemCollector',
+    'SYSTEM_COLLECTOR',
     'PlatformCollector',
     'PLATFORM_COLLECTOR',
     'GCCollector',

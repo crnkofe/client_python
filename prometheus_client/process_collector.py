@@ -59,22 +59,41 @@ class ProcessCollector(Collector):
 
         result = []
         try:
+            # offset due to splitting parts by ) removing first two entries + 1 for man pages starting from 1
+            offset = 3
             with open(os.path.join(pid, 'stat'), 'rb') as stat:
                 parts = (stat.read().split(b')')[-1].split())
 
+            # from man 5 proc (starting from 1)
+            # (23) vsize  %lu
+            # Virtual memory size in bytes.
+            # (24) rss  %ld
+            # Resident Set Size: number of pages the process has in real memory.  This is just the pages which count  toward
+            # text,  data,  or  stack space.  This does not include pages which have not been demand-loaded in, or which are
+            # swapped out.  This value is inaccurate; see /proc/pid/statm below.
             vmem = GaugeMetricFamily(self._prefix + 'virtual_memory_bytes',
-                                     'Virtual memory size in bytes.', value=float(parts[20]))
+                                     'Virtual memory size in bytes.', value=float(parts[23-offset]))
             rss = GaugeMetricFamily(self._prefix + 'resident_memory_bytes', 'Resident memory size in bytes.',
-                                    value=float(parts[21]) * self._pagesize)
-            start_time_secs = float(parts[19]) / self._ticks
+                                    value=float(parts[24-offset]) * self._pagesize)
+            start_time_secs = float(parts[22 - offset]) / self._ticks
             start_time = GaugeMetricFamily(self._prefix + 'start_time_seconds',
                                            'Start time of the process since unix epoch in seconds.',
                                            value=start_time_secs + self._btime)
-            utime = float(parts[11]) / self._ticks
-            stime = float(parts[12]) / self._ticks
+            # from man 5 proc (starting from 1)
+            # (14) utime  %lu
+            #          Amount of time that this process has been  scheduled  in  user  mode,  measured  in  clock  ticks  (divide  by
+            #          sysconf(_SC_CLK_TCK)).  This includes guest time, guest_time (time spent running a virtual CPU, see below), so
+            #          that applications that are not aware of the guest time field do not lose that time from their calculations.
+            #
+            # (15) stime  %lu
+            #          Amount of time that this process has been scheduled in  kernel  mode,  measured  in  clock  ticks  (divide  by
+            #          sysconf(_SC_CLK_TCK)).
+            utime = float(parts[14 - offset]) / self._ticks
+            stime = float(parts[15 - offset]) / self._ticks
             cpu = CounterMetricFamily(self._prefix + 'cpu_seconds_total',
                                       'Total user and system CPU time spent in seconds.',
                                       value=utime + stime)
+
             result.extend([vmem, rss, start_time, cpu])
         except OSError:
             pass
