@@ -1,3 +1,4 @@
+import psutil
 import os
 from typing import Callable, Iterable, Optional, Union
 
@@ -51,6 +52,21 @@ class ProcessCollector(Collector):
                 if line.startswith(b'btime '):
                     return float(line.split()[1])
 
+    def collect_children(self, pid: int) -> tuple[float, float, float, float]:
+        vmem, rss, utime, stime = 0, 0, 0, 0
+        p = psutil.Process(pid)
+        offset = 3
+        for child in p.children(True):
+            pid = os.path.join(self._proc, str(child.pid).strip())
+            with open(os.path.join(pid, 'stat'), 'rb') as stat:
+                parts = (stat.read().split(b')')[-1].split())
+
+                vmem += float(parts[23-offset])
+                rss += float(parts[24-offset]) * self._pagesize
+                utime += float(parts[14 - offset]) / self._ticks
+                stime += float(parts[15 - offset]) / self._ticks
+        return vmem, rss, utime, stime
+
     def collect(self) -> Iterable[Metric]:
         if not self._btime:
             return []
@@ -59,6 +75,8 @@ class ProcessCollector(Collector):
 
         result = []
         try:
+            vmem_agg, rss_agg, utime_agg, stime_agg = self.collect_children(os.getpid())
+
             # offset due to splitting parts by ) removing first two entries + 1 for man pages starting from 1
             offset = 3
             with open(os.path.join(pid, 'stat'), 'rb') as stat:
@@ -72,9 +90,9 @@ class ProcessCollector(Collector):
             # text,  data,  or  stack space.  This does not include pages which have not been demand-loaded in, or which are
             # swapped out.  This value is inaccurate; see /proc/pid/statm below.
             vmem = GaugeMetricFamily(self._prefix + 'virtual_memory_bytes',
-                                     'Virtual memory size in bytes.', value=float(parts[23-offset]))
+                                     'Virtual memory size in bytes.', value=float(parts[23-offset]) + vmem_agg)
             rss = GaugeMetricFamily(self._prefix + 'resident_memory_bytes', 'Resident memory size in bytes.',
-                                    value=float(parts[24-offset]) * self._pagesize)
+                                    value=float(parts[24-offset]) * self._pagesize + rss_agg)
             start_time_secs = float(parts[22 - offset]) / self._ticks
             start_time = GaugeMetricFamily(self._prefix + 'start_time_seconds',
                                            'Start time of the process since unix epoch in seconds.',
@@ -88,8 +106,8 @@ class ProcessCollector(Collector):
             # (15) stime  %lu
             #          Amount of time that this process has been scheduled in  kernel  mode,  measured  in  clock  ticks  (divide  by
             #          sysconf(_SC_CLK_TCK)).
-            utime = float(parts[14 - offset]) / self._ticks
-            stime = float(parts[15 - offset]) / self._ticks
+            utime = float(parts[14 - offset]) / self._ticks + utime_agg
+            stime = float(parts[15 - offset]) / self._ticks + stime_agg
             cpu = CounterMetricFamily(self._prefix + 'cpu_seconds_total',
                                       'Total user and system CPU time spent in seconds.',
                                       value=utime + stime)
