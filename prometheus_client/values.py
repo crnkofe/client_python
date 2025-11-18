@@ -1,6 +1,7 @@
 import os
 from threading import Lock
 import warnings
+import logging
 
 from .mmap_dict import mmap_key, MmapedDict
 
@@ -90,7 +91,10 @@ def MultiProcessValue(process_identifier=os.getpid):
                 pid['value'] = actual_pid
                 # There has been a fork(), reset all the values.
                 for f in files.values():
-                    f.close()
+                    try:
+                        f.close()
+                    except OSError:
+                        logging.exception("File close failed")
                 files.clear()
                 for value in values:
                     value.__reset()
