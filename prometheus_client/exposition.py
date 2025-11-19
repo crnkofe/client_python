@@ -118,7 +118,7 @@ def _bake_output(registry, accept_header, accept_encoding_header, params, disabl
     return '200 OK', headers, output
 
 
-def make_wsgi_app(registry: CollectorRegistry = REGISTRY, disable_compression: bool = False) -> Callable:
+def make_wsgi_app(registry: CollectorRegistry = REGISTRY, get_health = lambda: ("200 OK", [], {}), disable_compression: bool = False) -> Callable:
     """Create a WSGI app which serves the metrics from a registry."""
 
     def prometheus_app(environ, start_response):
@@ -141,11 +141,13 @@ def make_wsgi_app(registry: CollectorRegistry = REGISTRY, disable_compression: b
             status = '200 OK'
             headers = []
             output = b''
-        else:
-            # Note: For backwards compatibility, the URI path for GET is not
-            # constrained to the documented /metrics, but any path is allowed.
+        elif environ['PATH_INFO'] == '/health':
+            status, headers, output = get_health()
+        elif environ['PATH_INFO'] == '/metrics':
             # Bake output
             status, headers, output = _bake_output(registry, accept_header, accept_encoding_header, params, disable_compression)
+        else:
+            status, headers, output = "404 Not Found", [], b""
         # Return output
         start_response(status, headers)
         return [output]
@@ -224,6 +226,7 @@ def start_wsgi_server(
         port: int,
         addr: str = '0.0.0.0',
         registry: CollectorRegistry = REGISTRY,
+        get_health = lambda: ("200 OK", [], {}),
         certfile: Optional[str] = None,
         keyfile: Optional[str] = None,
         client_cafile: Optional[str] = None,
@@ -237,7 +240,7 @@ def start_wsgi_server(
         """Copy of ThreadingWSGIServer to update address_family locally"""
 
     TmpServer.address_family, addr = _get_best_family(addr, port)
-    app = make_wsgi_app(registry)
+    app = make_wsgi_app(registry=registry, get_health=get_health)
     httpd = make_server(addr, port, app, TmpServer, handler_class=_SilentHandler)
     if certfile and keyfile:
         context = _get_ssl_ctx(certfile, keyfile, protocol, client_cafile, client_capath, client_auth_required)
